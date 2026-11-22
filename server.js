@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const { verifyToken, requireRole } = require('./authMiddleware');
+const registerDataRoutes = require('./dataRoutes');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
@@ -354,6 +355,9 @@ app.delete('/api/buses/:id', verifyToken, requireRole('admin'), async (req, res,
         next(error);
     }
 });
+
+// Cloud data (bookings, notifications, reviews, logs, per-user data)
+registerDataRoutes(app, db);
 
 app.use('/api', (req, res) => {
     res.status(404).json({

@@ -2,6 +2,10 @@ const { getApps, initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 
+// Cache ng role para hindi mag-Firestore read sa bawat request (polling)
+const roleCache = new Map();
+const ROLE_TTL_MS = 60 * 1000;
+
 function loadServiceAccount() {
     // Sa Render (production): galing sa environment variable
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -28,16 +32,26 @@ async function verifyToken(req, res, next) {
         const decoded = await getAuth().verifyIdToken(match[1]);
 
         // Role ay kinukuha sa Firestore, hindi sa token, para hindi mapeke
-        const snap = await getFirestore().collection('users').doc(decoded.uid).get();
+        let role;
+        const cached = roleCache.get(decoded.uid);
 
-        if (!snap.exists) {
-            return res.status(403).json({ message: 'No role assigned to this account.' });
+        if (cached && cached.expires > Date.now()) {
+            role = cached.role;
+        } else {
+            const snap = await getFirestore().collection('users').doc(decoded.uid).get();
+
+            if (!snap.exists) {
+                return res.status(403).json({ message: 'No role assigned to this account.' });
+            }
+
+            role = snap.data().role;
+            roleCache.set(decoded.uid, { role, expires: Date.now() + ROLE_TTL_MS });
         }
 
         req.user = {
             uid: decoded.uid,
             email: decoded.email,
-            role: snap.data().role
+            role
         };
 
         next();
